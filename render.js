@@ -39,28 +39,10 @@ export async function renderVideo(job) {
         console.log(`[${job.videoId}] Visual ${i}: downloaded (${isVideo ? "video" : "image"})`);
 
         if (isVideo) {
-          // Pre-process video: trim to needed duration, scale to 1080x1920, re-encode
-          // This avoids FFmpeg issues with various Pexels/Veo formats
-          try {
-            execSync(
-              `ffmpeg -y -i "${rawPath}" -t ${scene.duration + 2} -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p "${visualPath}"`,
-              { timeout: 120000, stdio: "pipe" }
-            );
-            console.log(`[${job.videoId}] Visual ${i}: pre-processed OK`);
-          } catch (preErr) {
-            console.warn(`[${job.videoId}] Visual ${i}: pre-process failed, extracting frame...`);
-            // Fallback: extract single frame as image
-            try {
-              visualPath = path.join(jobDir, `visual_${i}.png`);
-              execSync(`ffmpeg -y -i "${rawPath}" -vframes 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" "${visualPath}"`, { timeout: 30000, stdio: "pipe" });
-              isVideo = false;
-            } catch {
-              // Create black frame as last resort
-              visualPath = path.join(jobDir, `visual_${i}.png`);
-              execSync(`ffmpeg -y -f lavfi -i color=c=black:s=1080x1920 -frames:v 1 "${visualPath}"`, { timeout: 5000, stdio: "pipe" });
-              isVideo = false;
-            }
-          }
+          // Just use the raw download directly — skip pre-processing
+          // Copy raw to visual path
+          execSync(`cp "${rawPath}" "${visualPath}"`, { stdio: "pipe" });
+          console.log(`[${job.videoId}] Visual ${i}: using raw video directly`);
         }
       } else {
         // Create black frame
@@ -92,22 +74,11 @@ export async function renderVideo(job) {
 
       try {
         if (isVideo) {
-          // Try method 1: direct re-encode
-          try {
-            execSync(
-              `ffmpeg -y -i "${visualPath}" -i "${voicePath}" -map 0:v:0 -map 1:a:0 -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -t ${dur} -movflags +faststart "${clipPath}"`,
-              { timeout: 180000, stdio: "pipe" }
-            );
-          } catch {
-            // Method 2: extract frames first, then combine
-            console.log(`[${job.videoId}] Clip ${i}: trying alternate method...`);
-            const framePath = path.join(jobDir, `frame_${i}.png`);
-            execSync(`ffmpeg -y -i "${visualPath}" -vframes 1 "${framePath}"`, { timeout: 30000, stdio: "pipe" });
-            execSync(
-              `ffmpeg -y -loop 1 -i "${framePath}" -i "${voicePath}" -c:v libx264 -tune stillimage -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -pix_fmt yuv420p -t ${dur} -shortest "${clipPath}"`,
-              { timeout: 180000, stdio: "pipe" }
-            );
-          }
+          // Compose: video + audio, scale to 1080x1920
+          execSync(
+            `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p" -r 30 -t ${dur} -shortest -movflags +faststart "${clipPath}"`,
+            { timeout: 180000, stdio: "pipe" }
+          );
         } else {
           execSync(
             `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -tune stillimage -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -pix_fmt yuv420p -t ${dur} -shortest "${clipPath}"`,
