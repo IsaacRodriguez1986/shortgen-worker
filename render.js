@@ -74,11 +74,20 @@ export async function renderVideo(job) {
 
       try {
         if (isVideo) {
-          // Compose: video + audio, scale to 1080x1920
-          execSync(
-            `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p" -r 30 -t ${dur} -shortest -movflags +faststart "${clipPath}"`,
-            { timeout: 180000, stdio: "pipe" }
-          );
+          // Method: copy video stream + encode only audio (preserves visual quality)
+          try {
+            execSync(
+              `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" -c:v copy -c:a aac -b:a 128k -t ${dur} -shortest -movflags +faststart "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          } catch {
+            // If copy fails (format mismatch), try full re-encode with explicit decoder
+            console.log(`[${job.videoId}] Clip ${i}: copy failed, trying re-encode...`);
+            execSync(
+              `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -preset ultrafast -crf 18 -c:a aac -b:a 128k -t ${dur} -shortest -movflags +faststart "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          }
         } else {
           execSync(
             `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -tune stillimage -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -pix_fmt yuv420p -t ${dur} -shortest "${clipPath}"`,
