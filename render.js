@@ -67,10 +67,22 @@ export async function renderVideo(job) {
 
       try {
         if (isVideo) {
-          execSync(
-            `ffmpeg -y -i "${visualPath}" -i "${voicePath}" -map 0:v -map 1:a -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -t ${dur} -shortest "${clipPath}"`,
-            { timeout: 180000, stdio: "pipe" }
-          );
+          // Try method 1: direct re-encode
+          try {
+            execSync(
+              `ffmpeg -y -i "${visualPath}" -i "${voicePath}" -map 0:v:0 -map 1:a:0 -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -t ${dur} -movflags +faststart "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          } catch {
+            // Method 2: extract frames first, then combine
+            console.log(`[${job.videoId}] Clip ${i}: trying alternate method...`);
+            const framePath = path.join(jobDir, `frame_${i}.png`);
+            execSync(`ffmpeg -y -i "${visualPath}" -vframes 1 "${framePath}"`, { timeout: 30000, stdio: "pipe" });
+            execSync(
+              `ffmpeg -y -loop 1 -i "${framePath}" -i "${voicePath}" -c:v libx264 -tune stillimage -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -pix_fmt yuv420p -t ${dur} -shortest "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          }
         } else {
           execSync(
             `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" -c:v libx264 -tune stillimage -preset fast -crf 23 -c:a aac -b:a 128k -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -r 30 -pix_fmt yuv420p -t ${dur} -shortest "${clipPath}"`,
@@ -82,15 +94,22 @@ export async function renderVideo(job) {
           console.log(`[${job.videoId}] Clip ${i}: OK`);
         }
       } catch (err) {
-        console.error(`[${job.videoId}] Clip ${i} FAILED:`, err.stderr?.toString().slice(-150));
-        // Fallback: black + audio
+        const errMsg = err.stderr?.toString().slice(-300) || err.message;
+        console.error(`[${job.videoId}] Clip ${i} FAILED:`, errMsg);
+        // Fallback: black video + audio
         try {
+          console.log(`[${job.videoId}] Clip ${i}: trying black fallback...`);
           execSync(
-            `ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:r=30 -i "${voicePath}" -c:v libx264 -c:a aac -t ${dur} -pix_fmt yuv420p -shortest "${clipPath}"`,
+            `ffmpeg -y -f lavfi -i "color=c=black:s=1080x1920:r=30:d=${dur}" -i "${voicePath}" -c:v libx264 -preset ultrafast -c:a aac -b:a 128k -t ${dur} -pix_fmt yuv420p -shortest "${clipPath}"`,
             { timeout: 60000, stdio: "pipe" }
           );
-          if (existsSync(clipPath)) clips.push(clipPath);
-        } catch {}
+          if (existsSync(clipPath)) {
+            clips.push(clipPath);
+            console.log(`[${job.videoId}] Clip ${i}: black fallback OK`);
+          }
+        } catch (fallbackErr) {
+          console.error(`[${job.videoId}] Clip ${i}: even fallback failed:`, fallbackErr.stderr?.toString().slice(-200) || fallbackErr.message);
+        }
       }
     }
 
