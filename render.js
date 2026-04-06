@@ -32,11 +32,37 @@ export async function renderVideo(job) {
       let isVideo = false;
 
       if (scene.visualUrl && scene.visualUrl.startsWith("http")) {
-        // Detect type from URL first
-        isVideo = scene.visualUrl.includes(".mp4") || scene.visualUrl.includes("video");
+        isVideo = scene.visualUrl.includes(".mp4") || scene.visualUrl.includes("video") || scene.visualUrl.includes("pexels.com");
+        const rawPath = path.join(jobDir, `raw_visual_${i}.${isVideo ? "mp4" : "png"}`);
         visualPath = path.join(jobDir, `visual_${i}.${isVideo ? "mp4" : "png"}`);
-        await streamDownload(scene.visualUrl, visualPath);
+
+        await streamDownload(scene.visualUrl, rawPath);
         console.log(`[${job.videoId}] Visual ${i}: downloaded (${isVideo ? "video" : "image"})`);
+
+        if (isVideo) {
+          // Pre-process video: trim to needed duration, scale to 1080x1920, re-encode
+          // This avoids FFmpeg issues with various Pexels/Veo formats
+          try {
+            execSync(
+              `ffmpeg -y -i "${rawPath}" -t ${scene.duration + 2} -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" -c:v libx264 -preset fast -crf 23 -an -r 30 -pix_fmt yuv420p "${visualPath}"`,
+              { timeout: 120000, stdio: "pipe" }
+            );
+            console.log(`[${job.videoId}] Visual ${i}: pre-processed OK`);
+          } catch (preErr) {
+            console.warn(`[${job.videoId}] Visual ${i}: pre-process failed, extracting frame...`);
+            // Fallback: extract single frame as image
+            try {
+              visualPath = path.join(jobDir, `visual_${i}.png`);
+              execSync(`ffmpeg -y -i "${rawPath}" -vframes 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" "${visualPath}"`, { timeout: 30000, stdio: "pipe" });
+              isVideo = false;
+            } catch {
+              // Create black frame as last resort
+              visualPath = path.join(jobDir, `visual_${i}.png`);
+              execSync(`ffmpeg -y -f lavfi -i color=c=black:s=1080x1920 -frames:v 1 "${visualPath}"`, { timeout: 5000, stdio: "pipe" });
+              isVideo = false;
+            }
+          }
+        }
       } else {
         // Create black frame
         execSync(`ffmpeg -y -f lavfi -i color=c=black:s=1080x1920 -frames:v 1 "${visualPath}"`, { timeout: 5000, stdio: "pipe" });
