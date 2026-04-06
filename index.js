@@ -18,6 +18,16 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString(), memory: process.memoryUsage() });
 });
 
+// Debug: synchronous test render — returns result directly
+app.post("/render-test", authMiddleware, async (req, res) => {
+  try {
+    const result = await renderVideo(req.body);
+    res.json({ status: "ok", result });
+  } catch (err) {
+    res.json({ status: "error", error: err.message, stack: err.stack?.split("\n").slice(0, 5) });
+  }
+});
+
 app.post("/render", authMiddleware, async (req, res) => {
   const job = req.body;
 
