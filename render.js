@@ -1,6 +1,5 @@
 import { execSync } from "child_process";
-import { writeFileSync, mkdirSync, existsSync, readFileSync, createWriteStream } from "fs";
-import { pipeline } from "stream/promises";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import path from "path";
 
 const WORK_DIR = "/tmp/shortgen-renders";
@@ -211,10 +210,16 @@ export async function renderVideo(job) {
 }
 
 async function streamDownload(url, dest) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
-  if (!res.ok) throw new Error(`Download ${res.status}: ${url.slice(0, 80)}`);
-  const ws = createWriteStream(dest);
-  await pipeline(res.body, ws);
+  // Use curl — Node fetch + pipeline corrupts binary files on some platforms
+  execSync(`curl -sL -o "${dest}" --max-time 120 --retry 2 "${url}"`, {
+    timeout: 130000,
+    stdio: "pipe",
+  });
+  // Verify
+  if (!existsSync(dest)) throw new Error(`Download failed: ${url.slice(0, 80)}`);
+  const size = readFileSync(dest).length;
+  if (size < 100) throw new Error(`Download too small (${size}b): ${url.slice(0, 80)}`);
+  return size;
 }
 
 async function uploadToSupabase(filePath, buffer, contentType) {

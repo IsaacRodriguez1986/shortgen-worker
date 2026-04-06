@@ -1,10 +1,11 @@
 FROM node:20-bookworm-slim
 
-# Install FFmpeg (full version with all codecs)
+# Install FFmpeg and curl
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg curl && \
     rm -rf /var/lib/apt/lists/* && \
-    ffmpeg -version | head -1
+    ffmpeg -version | head -1 && \
+    curl --version | head -1
 
 WORKDIR /app
 
