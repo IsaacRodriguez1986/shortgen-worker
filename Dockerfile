@@ -1,7 +1,10 @@
-FROM node:20-slim
+FROM node:20-bookworm-slim
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg (full version with all codecs)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/* && \
+    ffmpeg -version | head -1
 
 WORKDIR /app
 
