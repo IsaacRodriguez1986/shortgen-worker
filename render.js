@@ -210,16 +210,16 @@ export async function renderVideo(job) {
 }
 
 async function streamDownload(url, dest) {
-  // Use curl — Node fetch + pipeline corrupts binary files on some platforms
-  execSync(`curl -sL -o "${dest}" --max-time 120 --retry 2 "${url}"`, {
-    timeout: 130000,
-    stdio: "pipe",
-  });
-  // Verify
-  if (!existsSync(dest)) throw new Error(`Download failed: ${url.slice(0, 80)}`);
-  const size = readFileSync(dest).length;
-  if (size < 100) throw new Error(`Download too small (${size}b): ${url.slice(0, 80)}`);
-  return size;
+  // Use fetch with arrayBuffer (NOT streaming pipeline — that corrupts binary files)
+  const res = await fetch(url, { signal: AbortSignal.timeout(120000) });
+  if (!res.ok) throw new Error(`Download ${res.status}: ${url.slice(0, 60)}`);
+  const arrayBuf = await res.arrayBuffer();
+  const buf = Buffer.from(arrayBuf);
+  writeFileSync(dest, buf);
+
+  if (buf.length < 100) throw new Error(`Download too small (${buf.length}b): ${url.slice(0, 60)}`);
+  console.log(`  Downloaded ${(buf.length / 1024).toFixed(0)}KB → ${dest.split("/").pop()}`);
+  return buf.length;
 }
 
 async function uploadToSupabase(filePath, buffer, contentType) {
