@@ -15,7 +15,19 @@ function authMiddleware(req, res, next) {
 }
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString(), memory: process.memoryUsage() });
+  const { existsSync } = require("fs");
+  const fontPaths = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  ];
+  const fontFound = fontPaths.find(p => existsSync(p)) || null;
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    memory: process.memoryUsage(),
+    fontFound,
+    version: "2.1-fonts",
+  });
 });
 
 // Debug: synchronous test render — returns result directly
