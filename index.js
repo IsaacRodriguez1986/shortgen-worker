@@ -32,11 +32,22 @@ app.get("/health", (req, res) => {
 
 // Debug: synchronous test render — returns result directly
 app.post("/render-test", authMiddleware, async (req, res) => {
+  // Capture console output for debugging
+  const logs = [];
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origErr = console.error;
+  console.log = (...args) => { logs.push(`LOG: ${args.join(" ")}`); origLog(...args); };
+  console.warn = (...args) => { logs.push(`WARN: ${args.join(" ")}`); origWarn(...args); };
+  console.error = (...args) => { logs.push(`ERR: ${args.join(" ")}`); origErr(...args); };
+
   try {
     const result = await renderVideo(req.body);
-    res.json({ status: "ok", result });
+    console.log = origLog; console.warn = origWarn; console.error = origErr;
+    res.json({ status: "ok", result, logs });
   } catch (err) {
-    res.json({ status: "error", error: err.message, stack: err.stack?.split("\n").slice(0, 5) });
+    console.log = origLog; console.warn = origWarn; console.error = origErr;
+    res.json({ status: "error", error: err.message, logs, stack: err.stack?.split("\n").slice(0, 5) });
   }
 });
 
