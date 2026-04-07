@@ -218,12 +218,12 @@ export async function renderVideo(job) {
 
       try {
         if (isVideo) {
-          // Video: loop + re-encode, normalize format
+          // Video: loop + re-encode, normalize format (ultrafast + 1 thread for low memory)
           execSync(
             `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" ` +
             `-filter_complex "[0:v]${scaleFilter}${subsFilter}[vout]" ` +
             `-map "[vout]" -map 1:a ` +
-            `-c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+            `-c:v libx264 -preset ultrafast -crf 23 -threads 1 -r 30 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
             `-t ${audioDuration} "${clipPath}"`,
             { timeout: 180000, stdio: "pipe" }
@@ -239,12 +239,12 @@ export async function renderVideo(job) {
             `-t ${audioDuration} -an "${tempVideo}"`,
             { timeout: 120000, stdio: "pipe" }
           );
-          // Step 2: Combine video + audio + subtitles
+          // Step 2: Combine video + audio + subtitles (low memory: ultrafast + 1 thread)
           execSync(
             `ffmpeg -y -i "${tempVideo}" -i "${voicePath}" ` +
             `-filter_complex "[0:v]${subsFilter ? `null${subsFilter}` : "null"}[vout]" ` +
             `-map "[vout]" -map 1:a ` +
-            `-c:v libx264 -tune stillimage -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+            `-c:v libx264 -tune stillimage -preset ultrafast -crf 23 -threads 1 -r 30 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
             `-t ${audioDuration} "${clipPath}"`,
             { timeout: 180000, stdio: "pipe" }
@@ -267,7 +267,7 @@ export async function renderVideo(job) {
               `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" ` +
               `-filter_complex "[0:v]${scaleFilter}[vout]" ` +
               `-map "[vout]" -map 1:a ` +
-              `-c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+              `-c:v libx264 -preset ultrafast -crf 23 -threads 1 -r 30 -pix_fmt yuv420p ` +
               `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
               `-t ${audioDuration} "${clipPath}"`,
               { timeout: 180000, stdio: "pipe" }
@@ -356,7 +356,7 @@ export async function renderVideo(job) {
         console.warn(`[${job.videoId}] Concat copy failed, re-encoding...`);
         execSync(
           `ffmpeg -y -f concat -safe 0 -i "${concatFile}" ` +
-          `-c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+          `-c:v libx264 -preset ultrafast -crf 23 -threads 1 -r 30 -pix_fmt yuv420p ` +
           `-c:a aac -b:a 128k -ar 44100 -ac 2 "${outputPath}"`,
           { timeout: 180000, stdio: "pipe" }
         );
