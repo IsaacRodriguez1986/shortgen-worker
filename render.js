@@ -15,6 +15,27 @@ function cleanNarrationForSubtitles(narration) {
     .trim();
 }
 
+// ── Font detection for drawtext ─────────────
+
+function findFontPath() {
+  const candidates = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/SFNSDisplay.ttf",
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+const FONT_PATH = findFontPath();
+const fontParam = FONT_PATH ? `:fontfile='${FONT_PATH}'` : "";
+
 // ── Subtitle generation (drawtext) ─────────────
 
 function escapeDrawtext(text) {
@@ -74,12 +95,12 @@ function buildSubtitleFilter(narration, duration, style) {
 
     // Neon: double layer for glow
     if (style === "neon") {
-      const glow = `drawtext=text='${escaped}'` +
+      const glow = `drawtext=text='${escaped}'${fontParam}` +
         `:enable='between(t,${g.start.toFixed(3)},${g.end.toFixed(3)})'` +
         `:fontsize=${s.size}:fontcolor=0x00FF88@0.3` +
         `:x=(w-text_w)/2:y=${yExpr}` +
         `:borderw=8:bordercolor=0x00FF88@0.2`;
-      const main = `drawtext=text='${escaped}'` +
+      const main = `drawtext=text='${escaped}'${fontParam}` +
         `:enable='between(t,${g.start.toFixed(3)},${g.end.toFixed(3)})'` +
         `:fontsize=${s.size}:fontcolor=${s.color}` +
         `:x=(w-text_w)/2:y=${yExpr}` +
@@ -95,13 +116,13 @@ function buildSubtitleFilter(narration, duration, style) {
         const keyword = escapeDrawtext(splitWords[0]);
         const rest = escapeDrawtext(splitWords.slice(1).join(" "));
         const enable = `enable='between(t,${g.start.toFixed(3)},${g.end.toFixed(3)})'`;
-        const f1 = `drawtext=text='${keyword} ${rest}':${enable}:fontsize=${s.size}:fontcolor=white:x=(w-text_w)/2:y=${yExpr}:borderw=${s.border}:bordercolor=${s.borderColor}:shadowcolor=black@0.7:shadowx=${s.shadow}:shadowy=${s.shadow}`;
-        const f2 = `drawtext=text='${keyword}':${enable}:fontsize=${s.size}:fontcolor=0xA855F7:x=(w-text_w)/2:y=${yExpr}:borderw=${s.border}:bordercolor=${s.borderColor}:shadowcolor=black@0.7:shadowx=${s.shadow}:shadowy=${s.shadow}`;
+        const f1 = `drawtext=text='${keyword} ${rest}'${fontParam}:${enable}:fontsize=${s.size}:fontcolor=white:x=(w-text_w)/2:y=${yExpr}:borderw=${s.border}:bordercolor=${s.borderColor}:shadowcolor=black@0.7:shadowx=${s.shadow}:shadowy=${s.shadow}`;
+        const f2 = `drawtext=text='${keyword}'${fontParam}:${enable}:fontsize=${s.size}:fontcolor=0xA855F7:x=(w-text_w)/2:y=${yExpr}:borderw=${s.border}:bordercolor=${s.borderColor}:shadowcolor=black@0.7:shadowx=${s.shadow}:shadowy=${s.shadow}`;
         return `${f1},${f2}`;
       }
     }
 
-    let f = `drawtext=text='${escaped}'` +
+    let f = `drawtext=text='${escaped}'${fontParam}` +
       `:enable='between(t,${g.start.toFixed(3)},${g.end.toFixed(3)})'` +
       `:fontsize=${s.size}:fontcolor=${s.color}` +
       `:x=(w-text_w)/2:y=${yExpr}` +
@@ -228,22 +249,53 @@ export async function renderVideo(job) {
         const errMsg = err.stderr?.toString().slice(-500) || err.message;
         console.error(`[${job.videoId}] Clip ${i} FAILED:`, errMsg);
 
-        // Fallback: simplest possible — black + audio, no filters
+        // Middle fallback: visual + audio WITHOUT subtitles
         try {
-          execSync(
-            `ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:r=30:d=${audioDuration} -i "${voicePath}" ` +
-            `-c:v libx264 -preset ultrafast -crf 23 -r 30 -pix_fmt yuv420p ` +
-            `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
-            `-t ${audioDuration} -shortest "${clipPath}" 2>&1`,
-            { timeout: 60000 }
-          );
+          if (isVideo) {
+            execSync(
+              `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" ` +
+              `-filter_complex "[0:v]${scaleFilter}[vout]" ` +
+              `-map "[vout]" -map 1:a ` +
+              `-c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+              `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
+              `-t ${audioDuration} "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          } else {
+            execSync(
+              `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" ` +
+              `-filter_complex "[0:v]${scaleFilter}[vout]" ` +
+              `-map "[vout]" -map 1:a ` +
+              `-c:v libx264 -tune stillimage -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+              `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
+              `-t ${audioDuration} "${clipPath}"`,
+              { timeout: 180000, stdio: "pipe" }
+            );
+          }
           if (existsSync(clipPath)) {
             clips.push(clipPath);
-            console.warn(`[${job.videoId}] Clip ${i}: black fallback OK`);
+            console.warn(`[${job.videoId}] Clip ${i}: OK (no subtitles)`);
           }
-        } catch (fallbackErr) {
-          const fbMsg = fallbackErr.stderr?.toString().slice(-300) || fallbackErr.stdout?.toString().slice(-300) || fallbackErr.message;
-          console.error(`[${job.videoId}] Clip ${i}: fallback FAILED:`, fbMsg);
+        } catch (midErr) {
+          console.error(`[${job.videoId}] Clip ${i} no-subs fallback failed:`, midErr.stderr?.toString().slice(-300) || midErr.message);
+
+          // Last fallback: black + audio, no filters
+          try {
+            execSync(
+              `ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:r=30:d=${audioDuration} -i "${voicePath}" ` +
+              `-c:v libx264 -preset ultrafast -crf 23 -r 30 -pix_fmt yuv420p ` +
+              `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
+              `-t ${audioDuration} -shortest "${clipPath}" 2>&1`,
+              { timeout: 60000 }
+            );
+            if (existsSync(clipPath)) {
+              clips.push(clipPath);
+              console.warn(`[${job.videoId}] Clip ${i}: black fallback OK`);
+            }
+          } catch (fallbackErr) {
+            const fbMsg = fallbackErr.stderr?.toString().slice(-300) || fallbackErr.stdout?.toString().slice(-300) || fallbackErr.message;
+            console.error(`[${job.videoId}] Clip ${i}: fallback FAILED:`, fbMsg);
+          }
         }
       }
     }

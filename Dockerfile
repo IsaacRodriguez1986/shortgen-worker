@@ -2,7 +2,8 @@ FROM node:20-bookworm-slim
 
 # Install FFmpeg and curl
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg curl fonts-dejavu-core fontconfig && \
+    fc-cache -f && \
     rm -rf /var/lib/apt/lists/* && \
     ffmpeg -version | head -1 && \
     curl --version | head -1
