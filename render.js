@@ -228,26 +228,43 @@ export async function renderVideo(job) {
         const errMsg = err.stderr?.toString().slice(-500) || err.message;
         console.error(`[${job.videoId}] Clip ${i} FAILED:`, errMsg);
 
-        // Fallback: black video + voice audio only
+        // Fallback: simplest possible — black + audio, no filters
         try {
           execSync(
             `ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:r=30:d=${audioDuration} -i "${voicePath}" ` +
-            `-c:v libx264 -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+            `-c:v libx264 -preset ultrafast -crf 23 -r 30 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
-            `-t ${audioDuration} "${clipPath}"`,
-            { timeout: 60000, stdio: "pipe" }
+            `-t ${audioDuration} -shortest "${clipPath}" 2>&1`,
+            { timeout: 60000 }
           );
           if (existsSync(clipPath)) {
             clips.push(clipPath);
             console.warn(`[${job.videoId}] Clip ${i}: black fallback OK`);
           }
-        } catch {
-          console.error(`[${job.videoId}] Clip ${i}: even fallback failed, skipping`);
+        } catch (fallbackErr) {
+          const fbMsg = fallbackErr.stderr?.toString().slice(-300) || fallbackErr.stdout?.toString().slice(-300) || fallbackErr.message;
+          console.error(`[${job.videoId}] Clip ${i}: fallback FAILED:`, fbMsg);
         }
       }
     }
 
-    if (clips.length === 0) throw new Error("No clips generated");
+    if (clips.length === 0) {
+      // Collect all FFmpeg errors for debugging
+      const debugInfo = [];
+      for (let i = 0; i < sceneFiles.length; i++) {
+        const { voicePath, visualPath } = sceneFiles[i];
+        debugInfo.push(`Scene ${i}: voice=${existsSync(voicePath)}, visual=${existsSync(visualPath)}`);
+        // Try a minimal FFmpeg test
+        try {
+          const testOut = path.join(jobDir, `debug_${i}.mp4`);
+          execSync(`ffmpeg -y -f lavfi -i color=c=black:s=320x240:r=1:d=1 -frames:v 1 "${testOut}" 2>&1`, { timeout: 5000 });
+          debugInfo.push(`FFmpeg works: ${existsSync(testOut)}`);
+        } catch (e) {
+          debugInfo.push(`FFmpeg test failed: ${e.message}`);
+        }
+      }
+      throw new Error(`No clips generated. Debug: ${debugInfo.join(" | ")}`);
+    }
 
     // Step 3: Concatenate — all clips are normalized so -c copy should work
     console.log(`[${job.videoId}] Concatenating ${clips.length} clips...`);
@@ -366,5 +383,3 @@ async function uploadToSupabase(filePath, buffer, contentType) {
   if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
   return `${url}/storage/v1/object/public/videos/${filePath}`;
 }
-
-// Worker v2.0 — 2026-04-07T20:43:24Z
