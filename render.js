@@ -366,3 +366,5 @@ async function uploadToSupabase(filePath, buffer, contentType) {
   if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
   return `${url}/storage/v1/object/public/videos/${filePath}`;
 }
+
+// Worker v2.0 — 2026-04-07T20:43:24Z
