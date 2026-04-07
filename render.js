@@ -218,7 +218,7 @@ export async function renderVideo(job) {
 
       try {
         if (isVideo) {
-          // Video: use filter_complex, map voice audio (ignore video's audio), normalize format
+          // Video: loop + re-encode, normalize format
           execSync(
             `ffmpeg -y -stream_loop -1 -i "${visualPath}" -i "${voicePath}" ` +
             `-filter_complex "[0:v]${scaleFilter}${subsFilter}[vout]" ` +
@@ -229,12 +229,13 @@ export async function renderVideo(job) {
             { timeout: 180000, stdio: "pipe" }
           );
         } else {
-          // Image: loop, same normalization
+          // Image: use -framerate and -t BEFORE -loop to limit memory usage
+          // This prevents OOM on low-memory containers (Railway)
           execSync(
-            `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" ` +
-            `-filter_complex "[0:v]${scaleFilter}${subsFilter}[vout]" ` +
+            `ffmpeg -y -framerate 1 -loop 1 -t ${audioDuration} -i "${visualPath}" -i "${voicePath}" ` +
+            `-filter_complex "[0:v]fps=30,${scaleFilter}${subsFilter}[vout]" ` +
             `-map "[vout]" -map 1:a ` +
-            `-c:v libx264 -tune stillimage -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+            `-c:v libx264 -tune stillimage -preset fast -crf 23 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
             `-t ${audioDuration} "${clipPath}"`,
             { timeout: 180000, stdio: "pipe" }
@@ -263,10 +264,10 @@ export async function renderVideo(job) {
             );
           } else {
             execSync(
-              `ffmpeg -y -loop 1 -i "${visualPath}" -i "${voicePath}" ` +
-              `-filter_complex "[0:v]${scaleFilter}[vout]" ` +
+              `ffmpeg -y -framerate 1 -loop 1 -t ${audioDuration} -i "${visualPath}" -i "${voicePath}" ` +
+              `-filter_complex "[0:v]fps=30,${scaleFilter}[vout]" ` +
               `-map "[vout]" -map 1:a ` +
-              `-c:v libx264 -tune stillimage -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
+              `-c:v libx264 -tune stillimage -preset fast -crf 23 -pix_fmt yuv420p ` +
               `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
               `-t ${audioDuration} "${clipPath}"`,
               { timeout: 180000, stdio: "pipe" }
