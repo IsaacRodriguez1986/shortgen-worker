@@ -38,14 +38,15 @@ app.post("/render", authMiddleware, async (req, res) => {
   // Respond immediately
   res.json({ status: "accepted", videoId: job.videoId });
 
-  // Process with timeout (4 minutes max)
+  // Dynamic timeout: 3 min per scene + 2 min buffer (minimum 4 minutes)
+  const timeoutMs = Math.max((job.scenes.length * 180000) + 120000, 240000);
   const timeout = setTimeout(async () => {
-    console.error(`[RENDER] TIMEOUT for video ${job.videoId}`);
+    console.error(`[RENDER] TIMEOUT for video ${job.videoId} after ${timeoutMs / 1000}s`);
     await sendCallback(job.callbackUrl, {
       videoId: job.videoId,
-      error: "Render timeout after 4 minutes"
+      error: `Render timeout after ${Math.round(timeoutMs / 60000)} minutes`
     });
-  }, 240000);
+  }, timeoutMs);
 
   try {
     console.log(`[RENDER] Starting video ${job.videoId} (${job.scenes.length} scenes)`);
