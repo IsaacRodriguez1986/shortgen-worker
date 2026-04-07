@@ -1,4 +1,5 @@
 import express from "express";
+import { existsSync } from "fs";
 import { renderVideo } from "./render.js";
 
 const app = express();
@@ -15,7 +16,6 @@ function authMiddleware(req, res, next) {
 }
 
 app.get("/health", (req, res) => {
-  const { existsSync } = require("fs");
   const fontPaths = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
