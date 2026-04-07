@@ -229,17 +229,27 @@ export async function renderVideo(job) {
             { timeout: 180000, stdio: "pipe" }
           );
         } else {
-          // Image: use -framerate and -t BEFORE -loop to limit memory usage
-          // This prevents OOM on low-memory containers (Railway)
+          // Image: two-step to prevent OOM on low-memory containers (Railway)
+          // Step 1: Create a short silent video from image
+          const tempVideo = path.join(jobDir, `temp_${i}.mp4`);
           execSync(
-            `ffmpeg -y -framerate 1 -loop 1 -t ${audioDuration} -i "${visualPath}" -i "${voicePath}" ` +
-            `-filter_complex "[0:v]fps=30,${scaleFilter}${subsFilter}[vout]" ` +
+            `ffmpeg -y -loop 1 -i "${visualPath}" ` +
+            `-vf "${scaleFilter}" ` +
+            `-c:v libx264 -tune stillimage -preset ultrafast -crf 28 -r 30 -pix_fmt yuv420p ` +
+            `-t ${audioDuration} -an "${tempVideo}"`,
+            { timeout: 120000, stdio: "pipe" }
+          );
+          // Step 2: Combine video + audio + subtitles
+          execSync(
+            `ffmpeg -y -i "${tempVideo}" -i "${voicePath}" ` +
+            `-filter_complex "[0:v]${subsFilter ? `null${subsFilter}` : "null"}[vout]" ` +
             `-map "[vout]" -map 1:a ` +
-            `-c:v libx264 -tune stillimage -preset fast -crf 23 -pix_fmt yuv420p ` +
+            `-c:v libx264 -tune stillimage -preset fast -crf 23 -r 30 -pix_fmt yuv420p ` +
             `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
             `-t ${audioDuration} "${clipPath}"`,
             { timeout: 180000, stdio: "pipe" }
           );
+          try { unlinkSync(tempVideo); } catch {}
         }
 
         if (existsSync(clipPath)) {
@@ -263,15 +273,23 @@ export async function renderVideo(job) {
               { timeout: 180000, stdio: "pipe" }
             );
           } else {
+            // Two-step for image (memory safe, no subs)
+            const tempVideo = path.join(jobDir, `tempfb_${i}.mp4`);
             execSync(
-              `ffmpeg -y -framerate 1 -loop 1 -t ${audioDuration} -i "${visualPath}" -i "${voicePath}" ` +
-              `-filter_complex "[0:v]fps=30,${scaleFilter}[vout]" ` +
-              `-map "[vout]" -map 1:a ` +
-              `-c:v libx264 -tune stillimage -preset fast -crf 23 -pix_fmt yuv420p ` +
-              `-c:a aac -b:a 128k -ar 44100 -ac 2 ` +
-              `-t ${audioDuration} "${clipPath}"`,
-              { timeout: 180000, stdio: "pipe" }
+              `ffmpeg -y -loop 1 -i "${visualPath}" ` +
+              `-vf "${scaleFilter}" ` +
+              `-c:v libx264 -tune stillimage -preset ultrafast -crf 28 -r 30 -pix_fmt yuv420p ` +
+              `-t ${audioDuration} -an "${tempVideo}"`,
+              { timeout: 120000, stdio: "pipe" }
             );
+            execSync(
+              `ffmpeg -y -i "${tempVideo}" -i "${voicePath}" ` +
+              `-map 0:v -map 1:a ` +
+              `-c:v copy -c:a aac -b:a 128k -ar 44100 -ac 2 ` +
+              `-t ${audioDuration} "${clipPath}"`,
+              { timeout: 60000, stdio: "pipe" }
+            );
+            try { unlinkSync(tempVideo); } catch {}
           }
           if (existsSync(clipPath)) {
             clips.push(clipPath);
