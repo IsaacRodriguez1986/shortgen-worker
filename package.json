@@ -1,7 +1,7 @@
 {
-  "name": "shortgen-render-worker",
-  "version": "1.0.0",
-  "description": "FFmpeg video render worker for ShortGen AI",
+  "name": "viratronik-render-worker",
+  "version": "3.0.0",
+  "description": "Remotion video render worker for Viratronik",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -10,6 +10,13 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "fluent-ffmpeg": "^2.1.3"
+    "remotion": "4.0.446",
+    "@remotion/bundler": "4.0.446",
+    "@remotion/renderer": "4.0.446",
+    "@remotion/media-utils": "4.0.446",
+    "@remotion/cli": "4.0.446",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "^5.0.0"
   }
 }
